@@ -1,1 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniView | Universal Document Interface</title>
 
+    <!-- Tailwind CSS with Typography Plugin for elegant document formatting -->
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: { 850: '#141e30', 900: '#0f172a' }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Document Parsing Libraries -->
+    <!-- Mammoth for Word Docs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
+    <!-- SheetJS for Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- JSZip for PPTX processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom styling for rendered Excel tables */
+        .excel-table-container {
+            width: 100%;
+            overflow: auto;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+            background: white;
+        }
+        .excel-table-container table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+            text-align: left;
+        }
+        .excel-table-container th {
+            background-color: #f8fafc;
+            font-weight: 600;
+            color: #334155;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            box-shadow: inset 0 -1px 0 #e2e8f0;
+        }
+        .excel-table-container th, .excel-table-container td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            border-right: 1px solid #f1f5f9;
+        }
+        .excel-table-container td { color: #475569; }
+        .excel-table-container tr:hover td { background-color: #f8fafc; }
+        
+        /* Smooth fade-in animation */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Hide scrollbar for the sidebar */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col md:flex-row bg-slate-50 text-slate-900 overflow-hidden font-sans">
+
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-80 bg-slate-900 text-slate-100 flex flex-col shadow-xl z-20 shrink-0 h-auto md:h-full transition-all duration-300">
+        <div class="p-6 flex items-center gap-3 border-b border-slate-800">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <i data-lucide="microscope" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+                <h1 class="font-bold tracking-tight text-lg leading-tight">OmniView</h1>
+                <p class="text-xs text-slate-400 font-medium tracking-wide">ACADEMIC PARSER</p>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto no-scrollbar p-6 space-y-8">
+            <!-- Mode Toggle -->
+            <div class="bg-slate-800/50 p-1.5 rounded-lg flex space-x-1 border border-slate-700/50">
+                <button id="btn-tab-local" class="flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all bg-indigo-500 text-white shadow text-center focus:outline-none">
+                    Local File
+                </button>
+                <button id="btn-tab-url" class="flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-700 text-center focus:outline-none">
+                    Web URL
+                </button>
+            </div>
+
+            <!-- Local File Upload Section -->
+            <div id="section-local" class="space-y-4 fade-in">
+                <p class="text-sm text-slate-300">Select a document from your device to parse and analyze.</p>
+                
+                <div id="drop-zone" class="border-2 border-dashed border-slate-600 rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:border-indigo-400 hover:bg-slate-800/50 transition-colors group relative">
+                    <input type="file" id="file-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
+                    <div class="bg-slate-800 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform duration-300">
+                        <i data-lucide="upload-cloud" class="w-6 h-6 text-indigo-400"></i>
+                    </div>
+                    <span class="text-sm font-semibold text-slate-200">Drag & drop or click</span>
+                    <span class="text-xs text-slate-400 mt-1">Supports PDF, DOCX, XLSX, PPTX</span>
+                </div>
+
+                <!-- Supported File Types -->
+                <div class="pt-4 border-t border-slate-800">
+                    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Compatible Formats</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div class="flex items-center gap-2 text-sm text-slate-300 bg-slate-800/40 px-3 py-2 rounded-md">
+                            <i data-lucide="file-text" class="w-4 h-4 text-blue-400"></i> PDF & Word
+                        </div>
+                        <div class="flex items-center gap-2 text-sm text-slate-300 bg-slate-800/40 px-3 py-2 rounded-md">
+                            <i data-lucide="table" class="w-4 h-4 text-emerald-400"></i> Excel Data
+                        </div>
+                        <div class="flex items-center gap-2 text-sm text-slate-300 bg-slate-800/40 px-3 py-2 rounded-md col-span-2">
+                            <i data-lucide="presentation" class="w-4 h-4 text-orange-400"></i> PowerPoint (Text Outline)
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Web URL Section -->
+            <div id="section-url" class="space-y-4 fade-in hidden">
+                <p class="text-sm text-slate-300">Enter a direct link to a document hosted online.</p>
+                <form id="url-form" class="space-y-3">
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="link" class="w-4 h-4 text-slate-500"></i>
+                        </div>
+                        <input type="url" id="url-input" required placeholder="https://example.com/paper.pdf" class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block pl-10 p-2.5 placeholder-slate-500">
+                    </div>
+                    <button type="submit" class="w-full text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-800 font-medium rounded-lg text-sm px-5 py-2.5 text-center transition-colors">
+                        Load Remote File
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- File Info Display -->
+        <div id="file-info" class="p-6 bg-slate-850 border-t border-slate-800 hidden">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Current Document</h3>
+            <div class="flex items-start gap-3">
+                <i id="file-icon" data-lucide="file" class="w-5 h-5 text-indigo-400 mt-0.5"></i>
+                <div class="flex-1 min-w-0">
+                    <p id="file-name" class="text-sm font-medium text-slate-200 truncate">document.pdf</p>
+                    <p id="file-size" class="text-xs text-slate-500 mt-0.5">2.4 MB</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 relative flex flex-col h-full w-full bg-slate-50">
+        
+        <!-- Top bar (Mobile only or contextual tools) -->
+        <div class="h-14 bg-white border-b border-slate-200 flex items-center px-6 justify-between shrink-0 shadow-sm z-10">
+            <h2 id="viewer-title" class="text-sm font-semibold text-slate-800 truncate">Workspace</h2>
+            <div class="flex items-center gap-4 text-slate-400">
+                <button onclick="clearViewer()" class="hover:text-slate-700 transition-colors" title="Clear Workspace">
+                    <i data-lucide="x-circle" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Viewer Container -->
+        <div id="viewer-container" class="flex-1 relative overflow-auto p-4 sm:p-8">
+            <!-- Empty State -->
+            <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                <div class="w-20 h-20 mb-6 rounded-full bg-slate-100 flex items-center justify-center shadow-inner">
+                    <i data-lucide="atom" class="w-10 h-10 text-indigo-200"></i>
+                </div>
+                <h2 class="text-xl font-semibold text-slate-700 mb-2">Awaiting Data Input</h2>
+                <p class="max-w-md text-center text-sm">Upload a document to project it onto the canvas. Whether parsing theories in Word, datasets in Excel, or papers in PDF, your tools are ready.</p>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loading-state" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-50/80 backdrop-blur-sm z-50 hidden">
+                <i data-lucide="loader-2" class="w-8 h-8 text-indigo-600 animate-spin mb-4"></i>
+                <p class="text-sm font-medium text-slate-600">Processing Document...</p>
+            </div>
+
+            <!-- Actual Render Area -->
+            <div id="render-area" class="w-full h-full hidden fade-in max-w-5xl mx-auto"></div>
+        </div>
+    </main>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // DOM Elements
+        const tabLocal = document.getElementById('btn-tab-local');
+        const tabUrl = document.getElementById('btn-tab-url');
+        const sectionLocal = document.getElementById('section-local');
+        const sectionUrl = document.getElementById('section-url');
+        const fileInput = document.getElementById('file-input');
+        const urlForm = document.getElementById('url-form');
+        const urlInput = document.getElementById('url-input');
+        
+        const renderArea = document.getElementById('render-area');
+        const emptyState = document.getElementById('empty-state');
+        const loadingState = document.getElementById('loading-state');
+        const viewerTitle = document.getElementById('viewer-title');
+        const viewerContainer = document.getElementById('viewer-container');
+        
+        const fileInfo = document.getElementById('file-info');
+        const fileNameEl = document.getElementById('file-name');
+        const fileSizeEl = document.getElementById('file-size');
+        const fileIconEl = document.getElementById('file-icon');
+
+        // Tab Switching Logic
+        tabLocal.addEventListener('click', () => {
+            tabLocal.className = "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all bg-indigo-500 text-white shadow text-center focus:outline-none";
+            tabUrl.className = "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-700 text-center focus:outline-none";
+            sectionLocal.classList.remove('hidden');
+            sectionUrl.classList.add('hidden');
+        });
+
+        tabUrl.addEventListener('click', () => {
+            tabUrl.className = "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all bg-indigo-500 text-white shadow text-center focus:outline-none";
+            tabLocal.className = "flex-1 py-2 px-3 rounded-md text-sm font-medium transition-all text-slate-400 hover:text-white hover:bg-slate-700 text-center focus:outline-none";
+            sectionUrl.classList.remove('hidden');
+            sectionLocal.classList.add('hidden');
+        });
+
+        // UI State Managers
+        function showLoading() {
+            emptyState.classList.add('hidden');
+            renderArea.classList.add('hidden');
+            loadingState.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            loadingState.classList.add('hidden');
+        }
+
+        function clearViewer() {
+            renderArea.innerHTML = '';
+            renderArea.classList.add('hidden');
+            emptyState.classList.remove('hidden');
+            viewerTitle.textContent = "Workspace";
+            fileInput.value = '';
+            fileInfo.classList.add('hidden');
+            viewerContainer.className = "flex-1 relative overflow-auto p-4 sm:p-8"; // reset padding
+        }
+
+        function setRenderContent(html, isIframe = false, title = "Document View") {
+            hideLoading();
+            emptyState.classList.add('hidden');
+            renderArea.classList.remove('hidden');
+            renderArea.innerHTML = html;
+            viewerTitle.textContent = title;
+            
+            // Adjust container padding based on content type
+            if (isIframe) {
+                viewerContainer.className = "flex-1 relative overflow-hidden p-0"; // No padding for native iframes
+                renderArea.className = "w-full h-full"; // Take full height
+            } else {
+                viewerContainer.className = "flex-1 relative overflow-auto p-4 sm:p-8";
+                renderArea.className = "w-full hidden fade-in max-w-5xl mx-auto pb-12"; // Scrolled readable content
+                renderArea.classList.remove('hidden');
+            }
+            lucide.createIcons();
+        }
+
+        function updateSidebarInfo(name, sizeStr, iconName) {
+            fileNameEl.textContent = name;
+            fileSizeEl.textContent = sizeStr;
+            fileIconEl.setAttribute('data-lucide', iconName);
+            fileInfo.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function showError(message) {
+            hideLoading();
+            const errorHtml = `
+                <div class="flex flex-col items-center justify-center h-full text-red-500 pt-20">
+                    <i data-lucide="alert-triangle" class="w-16 h-16 mb-4 text-red-400"></i>
+                    <h3 class="text-lg font-bold">Analysis Failed</h3>
+                    <p class="text-slate-600 mt-2 max-w-md text-center">${message}</p>
+                </div>
+            `;
+            setRenderContent(errorHtml, false, "Error");
+        }
+
+        // Processing Logic
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            handleFile(file);
+        });
+
+        // Drag and Drop
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('border-indigo-400', 'bg-slate-800/80'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-indigo-400', 'bg-slate-800/80'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-400', 'bg-slate-800/80');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        async function handleFile(file) {
+            showLoading();
+            const ext = file.name.split('.').pop().toLowerCase();
+            updateSidebarInfo(file.name, formatBytes(file.size), getIconForExt(ext));
+
+            try {
+                if (ext === 'pdf') {
+                    renderPDF(file);
+                } else if (ext === 'docx' || ext === 'doc') {
+                    await renderWord(file);
+                } else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+                    await renderExcel(file);
+                } else if (ext === 'pptx' || ext === 'ppt') {
+                    await renderPowerPoint(file);
+                } else {
+                    showError("Unsupported file format. Please upload PDF, Word, Excel, or PowerPoint files.");
+                }
+            } catch (err) {
+                console.error(err);
+                showError("An error occurred while parsing the document. " + err.message);
+            }
+        }
+
+        function getIconForExt(ext) {
+            if (ext === 'pdf') return 'file-text';
+            if (['doc', 'docx'].includes(ext)) return 'file-type';
+            if (['xls', 'xlsx', 'csv'].includes(ext)) return 'table';
+            if (['ppt', 'pptx'].includes(ext)) return 'presentation';
+            return 'file';
+        }
+
+        // --- SPECIFIC RENDERERS ---
+
+        function renderPDF(file) {
+            const objectUrl = URL.createObjectURL(file);
+            const html = `<iframe src="${objectUrl}#toolbar=0" class="w-full h-full border-0" title="PDF Viewer"></iframe>`;
+            setRenderContent(html, true, file.name);
+        }
+
+        async function renderWord(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            // Using mammoth for docx conversion
+            mammoth.convertToHtml({arrayBuffer: arrayBuffer})
+                .then(function(result) {
+                    const html = `
+                        <div class="bg-white p-8 sm:p-12 shadow-sm rounded-xl border border-slate-200">
+                            <article class="prose prose-slate prose-indigo max-w-none">
+                                ${result.value}
+                            </article>
+                        </div>
+                    `;
+                    setRenderContent(html, false, file.name);
+                    if (result.messages.length > 0) console.warn("Mammoth messages:", result.messages);
+                })
+                .catch(function(err) {
+                    showError("Could not render Word Document. Ensure it is a valid .docx format.");
+                });
+        }
+
+        async function renderExcel(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const data = new Uint8Array(arrayBuffer);
+            const workbook = XLSX.read(data, {type: 'array'});
+            
+            let tabsHtml = `<div class="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar border-b border-slate-200">`;
+            let contentHtml = '';
+
+            workbook.SheetNames.forEach((sheetName, index) => {
+                const isActive = index === 0;
+                // Create tabs
+                tabsHtml += `
+                    <button onclick="switchExcelTab(${index})" id="tab-btn-${index}" class="excel-tab-btn px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap ${isActive ? 'bg-white border border-slate-200 border-b-white text-indigo-600 shadow-sm relative top-[1px]' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+                        ${sheetName}
+                    </button>
+                `;
+
+                // Create content views
+                const worksheet = workbook.Sheets[sheetName];
+                const htmlString = XLSX.utils.sheet_to_html(worksheet, { id: `sheet-${index}` });
+                
+                contentHtml += `
+                    <div id="sheet-content-${index}" class="excel-sheet-content ${isActive ? 'block' : 'hidden'}">
+                        <div class="excel-table-container">
+                            ${htmlString || '<div class="p-8 text-center text-slate-400 italic">Empty Sheet</div>'}
+                        </div>
+                    </div>
+                `;
+            });
+            tabsHtml += `</div>`;
+
+            const finalHtml = `
+                <div class="bg-white p-4 sm:p-6 shadow-sm rounded-xl border border-slate-200">
+                    ${tabsHtml}
+                    ${contentHtml}
+                </div>
+            `;
+            setRenderContent(finalHtml, false, file.name);
+        }
+
+        // Global function for Excel Tab switching
+        window.switchExcelTab = function(activeIndex) {
+            document.querySelectorAll('.excel-sheet-content').forEach((el, idx) => {
+                el.classList.toggle('hidden', idx !== activeIndex);
+                el.classList.toggle('block', idx === activeIndex);
+            });
+            document.querySelectorAll('.excel-tab-btn').forEach((btn, idx) => {
+                if (idx === activeIndex) {
+                    btn.className = "excel-tab-btn px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap bg-white border border-slate-200 border-b-white text-indigo-600 shadow-sm relative top-[1px]";
+                } else {
+                    btn.className = "excel-tab-btn px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap bg-slate-100 text-slate-500 hover:bg-slate-200";
+                }
+            });
+        }
+
+        async function renderPowerPoint(file) {
+            try {
+                // Extract PPTX using JSZip
+                const zip = await JSZip.loadAsync(file);
+                const slideFiles = [];
+                
+                // Find all slide files
+                zip.folder("ppt/slides").forEach((relativePath, zipEntry) => {
+                    if (relativePath.match(/^slide\d+\.xml$/)) {
+                        slideFiles.push({ path: relativePath, file: zipEntry });
+                    }
+                });
+
+                if (slideFiles.length === 0) {
+                    throw new Error("No readable slides found in this presentation.");
+                }
+
+                // Sort numerically (slide1, slide2... not slide1, slide10, slide2)
+                slideFiles.sort((a, b) => {
+                    const numA = parseInt(a.path.match(/\d+/)[0]);
+                    const numB = parseInt(b.path.match(/\d+/)[0]);
+                    return numA - numB;
+                });
+
+                let html = `
+                    <div class="max-w-4xl mx-auto space-y-8">
+                        <div class="bg-indigo-50 border border-indigo-100 text-indigo-800 p-4 rounded-lg flex items-start gap-3 shadow-sm">
+                            <i data-lucide="info" class="w-5 h-5 mt-0.5 flex-shrink-0 text-indigo-600"></i>
+                            <div>
+                                <h4 class="font-semibold text-sm">Text Extraction Mode</h4>
+                                <p class="text-sm mt-1 opacity-90">Visual layouts, images, and complex diagrams cannot be rendered locally. We have extracted the core text schema to help you review the content rapidly.</p>
+                            </div>
+                        </div>
+                        <div class="space-y-6">
+                `;
+
+                for (let i = 0; i < slideFiles.length; i++) {
+                    const xmlData = await slideFiles[i].file.async("string");
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(xmlData, "text/xml");
+                    
+                    // Extract text strings from drawing tags (<a:t>)
+                    const textNodes = xmlDoc.getElementsByTagName("a:t");
+                    let slideTextArray = [];
+                    for (let j = 0; j < textNodes.length; j++) {
+                        const txt = textNodes[j].textContent.trim();
+                        if (txt) slideTextArray.push(txt);
+                    }
+                    
+                    let slideContentHtml = '';
+                    if (slideTextArray.length > 0) {
+                        // Assume first line is header, rest are points
+                        slideContentHtml += `<h3 class="text-xl font-bold text-slate-800 mb-4">${slideTextArray[0]}</h3>`;
+                        if (slideTextArray.length > 1) {
+                            slideContentHtml += `<ul class="list-disc pl-5 space-y-2 text-slate-600 text-lg">`;
+                            for (let k = 1; k < slideTextArray.length; k++) {
+                                slideContentHtml += `<li>${slideTextArray[k]}</li>`;
+                            }
+                            slideContentHtml += `</ul>`;
+                        }
+                    } else {
+                        slideContentHtml = `<p class="text-slate-400 italic flex items-center gap-2"><i data-lucide="image" class="w-4 h-4"></i> Visual content only (No extractable text)</p>`;
+                    }
+
+                    html += `
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                        <div class="bg-slate-50 border-b border-slate-100 px-5 py-2.5 flex justify-between items-center">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Slide ${i + 1}</span>
+                        </div>
+                        <div class="p-6 sm:p-8 flex-1">
+                            ${slideContentHtml}
+                        </div>
+                    </div>`;
+                }
+
+                html += `</div></div>`;
+                setRenderContent(html, false, file.name);
+
+            } catch (error) {
+                console.error(error);
+                showError("Failed to extract PowerPoint content. Note: Older .ppt formats are not supported locally.");
+            }
+        }
+
+        // Handle URL Input (Relies on Google Docs Viewer iframe wrapper)
+        urlForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const url = urlInput.value.trim();
+            if (!url) return;
+
+            showLoading();
+            updateSidebarInfo("Remote Document", "Web Source", "link");
+            
+            // Using Google Docs Viewer as a universal fallback for URLs. 
+            // Note: URL must be publicly accessible.
+            const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
+            const html = `
+                <div class="w-full h-full relative group">
+                    <iframe src="${viewerUrl}" class="w-full h-full border-0 bg-white" title="Remote Viewer"></iframe>
+                    <div class="absolute top-4 right-4 bg-slate-900/80 text-white text-xs px-3 py-1.5 rounded-md backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                        Powered by Google Docs Viewer
+                    </div>
+                </div>
+            `;
+            
+            // Simulate network delay for UI feedback
+            setTimeout(() => {
+                setRenderContent(html, true, url.split('/').pop() || "Linked Document");
+            }, 800);
+        });
+
+    </script>
+</body>
+</html>
